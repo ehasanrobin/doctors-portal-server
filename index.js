@@ -8,9 +8,6 @@ var cors = require("cors");
 
 app.use(cors());
 app.use(express.json());
-app.get("/", (req, res) => {
-  res.send("Hello World!");
-});
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.he4j4wu.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, {
@@ -145,7 +142,9 @@ async function run() {
   }
 }
 run().catch(console.dir);
-
+app.get("/", (req, res) => {
+  res.send("Hello World!");
+});
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });
