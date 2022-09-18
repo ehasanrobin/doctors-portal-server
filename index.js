@@ -83,7 +83,7 @@ async function run() {
       const date = req.query.date;
       // all services
       const allServices = await services.find().toArray();
-      // all bookings
+      // all bookings as per date
       const query = { date: date };
       const allbookings = await bookingsCollection.find(query).toArray();
       allServices.map((service) => {
