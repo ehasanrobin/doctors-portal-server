@@ -1,10 +1,12 @@
 const express = require("express");
 var jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
 require("dotenv").config();
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 5000;
 var cors = require("cors");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 app.use(cors());
 app.use(express.json());
@@ -31,12 +33,91 @@ function verifyJwt(req, res, next) {
   });
 }
 
+const appointmentEmailSender = (email, name, date, slot) => {
+  console.log(email, name, date, slot);
+  let transporter = nodemailer.createTransport({
+    host: "smtp.sendgrid.net",
+    port: 587,
+    auth: {
+      user: "apikey",
+      pass: process.env.SENDGRID_API_KEY,
+    },
+  });
+
+  transporter.sendMail(
+    {
+      from: process.env.SENDER_EMAIL, // verified sender email
+      to: email, // recipient email
+      subject: "doctors portal Appointment", // Subject line
+      text: "Doctors portal appoitment", // plain text body
+      html: `<b>You have booked an appoitment on ${name},${date},${slot}, </b>`, // html body
+    },
+    function (error, info) {
+      if (error) {
+        console.log(error);
+      } else {
+        console.log("Email sent: " + info.response);
+      }
+    }
+  );
+};
+
 async function run() {
   try {
     const database = client.db("doctorsPortal");
     const services = database.collection("services");
     const bookingsCollection = database.collection("bookings");
     const usersCollection = database.collection("users");
+    const doctorsCollection = database.collection("doctors");
+    const paymentsCollection = database.collection("payments");
+
+    const verifyAdmin = async (req, res, next) => {
+      const requester = req.decoded.email;
+      const requesterAccount = await usersCollection.findOne({
+        email: requester,
+      });
+      if (requesterAccount.role === "admin") {
+        next();
+      } else {
+        return res.status(401).send({ massage: "forbidden" });
+      }
+    };
+
+    //  stripe payment api backend
+    app.post("/create-payment-intent", verifyJwt, async (req, res) => {
+      const { price } = req.body;
+      const amount = price * 100;
+      // Create a PaymentIntent with the order amount and currency
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types: ["card"],
+      });
+
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+    });
+
+    // doctors colleciton api
+
+    app.post("/doctor", verifyJwt, verifyAdmin, async (req, res) => {
+      const doc = req.body;
+      const result = await doctorsCollection.insertOne(doc);
+      res.send(result);
+    });
+    app.get("/doctors", verifyJwt, verifyAdmin, async (req, res) => {
+      const query = {};
+      const cursor = doctorsCollection.find(query);
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+    app.delete("/doctors/:email", verifyJwt, verifyAdmin, async (req, res) => {
+      const email = req.params.email;
+      const query = { email: email };
+      const result = doctorsCollection.deleteOne(query);
+      res.send(result);
+    });
 
     app.get("/services", async (req, res) => {
       const query = {};
@@ -105,7 +186,26 @@ async function run() {
         return res.status(403).send({ massage: "forbidden access" });
       }
     });
-    app.put("/user/:email", async (req, res) => {
+    app.patch("/booking/:id", verifyJwt, async (req, res) => {
+      const id = req.params.id;
+      const payment = req.body;
+      const filter = { _id: ObjectId(id) };
+      const doc = {
+        $set: {
+          paid: true,
+          transactionId: payment.transactionId,
+        },
+      };
+      const updatedBooking = await bookingsCollection.updateOne(filter, doc);
+      const inserPayment = await paymentsCollection.insertOne(payment);
+    });
+    app.get("/booking/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: ObjectId(id) };
+      const result = await bookingsCollection.findOne(query);
+      res.send(result);
+    });
+    app.put("/user/:email", verifyJwt, async (req, res) => {
       const email = req.params.email;
 
       const user = req.body;
@@ -120,7 +220,7 @@ async function run() {
         options
       );
       const token = jwt.sign({ email: email }, process.env.SECRET_KEY, {
-        expiresIn: "1h",
+        expiresIn: "1d",
       });
       res.send({ result, token });
     });
@@ -136,6 +236,7 @@ async function run() {
         return res.send({ sucess: false, booking: exist });
       }
       const result = await bookingsCollection.insertOne(data);
+      appointmentEmailSender(data.email, data.treatment, data.date, data.slot);
       res.send({ success: true, booking: result });
     });
   } finally {
