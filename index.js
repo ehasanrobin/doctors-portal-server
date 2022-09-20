@@ -84,7 +84,7 @@ async function run() {
     };
 
     //  stripe payment api backend
-    app.post("/create-payment-intent", verifyJwt, async (req, res) => {
+    app.post("/create-payment-intent", async (req, res) => {
       const { price } = req.body;
       const amount = price * 100;
       // Create a PaymentIntent with the order amount and currency
@@ -186,7 +186,7 @@ async function run() {
         return res.status(403).send({ massage: "forbidden access" });
       }
     });
-    app.patch("/booking/:id", verifyJwt, async (req, res) => {
+    app.patch("/booking/:id", async (req, res) => {
       const id = req.params.id;
       const payment = req.body;
       const filter = { _id: ObjectId(id) };
@@ -196,7 +196,7 @@ async function run() {
           transactionId: payment.transactionId,
         },
       };
-      const updatedBooking = await bookingsCollection.updateOne(filter, doc);
+      const updatedBooking = await bookingsCollection.updateOne(doc);
       const inserPayment = await paymentsCollection.insertOne(payment);
     });
     app.get("/booking/:id", async (req, res) => {
@@ -205,7 +205,7 @@ async function run() {
       const result = await bookingsCollection.findOne(query);
       res.send(result);
     });
-    app.put("/user/:email", verifyJwt, async (req, res) => {
+    app.put("/user/:email", async (req, res) => {
       const email = req.params.email;
 
       const user = req.body;
