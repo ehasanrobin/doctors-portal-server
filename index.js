@@ -196,8 +196,9 @@ async function run() {
           transactionId: payment.transactionId,
         },
       };
-      const updatedBooking = await bookingsCollection.updateOne(doc);
+      const updatedBooking = await bookingsCollection.updateOne(filter, doc);
       const inserPayment = await paymentsCollection.insertOne(payment);
+      res.send(updatedBooking, inserPayment);
     });
     app.get("/booking/:id", async (req, res) => {
       const id = req.params.id;
